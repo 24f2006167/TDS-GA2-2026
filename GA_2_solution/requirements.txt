@@ -1,0 +1,17 @@
+fastapi
+
+prometheus-client
+redis
+httpx
+pydantic
+PyJWT
+cryptography
+
+uvicorn[standard]
+python-dotenv
+PyYAML
+
+requests
+prometheus_client
+
+python-multipart
