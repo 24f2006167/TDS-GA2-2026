@@ -388,6 +388,7 @@ import uuid
 import httpx
 import json
 import re
+import hashlib
 from collections import defaultdict, deque
 from typing import Optional
 from fastapi import FastAPI, Request, Response
@@ -550,8 +551,17 @@ async def verify_token(request: Request):
             "aud": claims.get("aud", "")
         }
     except Exception as e:
-        # DEBUG: check Render > Logs to see the exact reason a token was rejected
+        # DEBUG: definitively check what key + token this deployment is actually using
+        key_hash = hashlib.sha256(config.PUBLIC_KEY_PEM.strip().encode()).hexdigest()
         print(f"JWT verify error: {type(e).__name__}: {e}", flush=True)
+        print(f"DEBUG deployed key SHA256: {key_hash}", flush=True)
+        try:
+            header = jwt.get_unverified_header(token)
+            unverified_claims = jwt.decode(token, options={"verify_signature": False})
+            print(f"DEBUG token header: {header}", flush=True)
+            print(f"DEBUG token claims (unverified): {unverified_claims}", flush=True)
+        except Exception as inner_e:
+            print(f"DEBUG could not even parse token: {inner_e}", flush=True)
         return JSONResponse(status_code=401, content={"valid": False})
 
 # --- Q3 ---
