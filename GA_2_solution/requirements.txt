@@ -15,3 +15,11 @@ requests
 prometheus_client
 
 python-multipart
+fastapi
+uvicorn
+prometheus-client
+redis
+httpx
+pydantic
+PyJWT
+cryptography
