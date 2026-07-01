@@ -23,6 +23,8 @@ redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=T
 http_requests_total = Counter("http_requests_total", "Total HTTP Requests")
 logs_queue = deque(maxlen=100)
 
+
+
 def is_rate_limited(client_id: str, limit: int, prefix: str) -> bool:
     key = f"ratelimit:{prefix}:{client_id}"
     now = time.time()
@@ -57,6 +59,15 @@ def safe_extract_json(s: str) -> dict:
             except Exception:
                 pass
     return {}
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "TDS GA2 API is running",
+        "docs": "/docs",
+        "status": "ok"
+    }
 
 # --- MIDDLEWARE ---
 @app.middleware("http")
