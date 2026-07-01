@@ -388,7 +388,6 @@ import uuid
 import httpx
 import json
 import re
-import hashlib
 from collections import defaultdict, deque
 from typing import Optional
 from fastapi import FastAPI, Request, Response
@@ -407,8 +406,6 @@ redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=T
 
 http_requests_total = Counter("http_requests_total", "Total HTTP Requests")
 logs_queue = deque(maxlen=100)
-
-
 
 def is_rate_limited(client_id: str, limit: int, prefix: str) -> bool:
     key = f"ratelimit:{prefix}:{client_id}"
@@ -445,24 +442,15 @@ def safe_extract_json(s: str) -> dict:
                 pass
     return {}
 
-
-@app.get("/")
-def root():
-    return {
-        "message": "TDS GA2 API is running",
-        "docs": "/docs",
-        "status": "ok"
-    }
-
 # --- MIDDLEWARE ---
 @app.middleware("http")
 async def custom_middleware(request: Request, call_next):
     start_time = time.time()
     http_requests_total.inc()
-
+    
     req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.req_id = req_id
-
+    
     logs_queue.append({
         "level": "INFO",
         "ts": time.time(),
@@ -510,7 +498,7 @@ async def custom_middleware(request: Request, call_next):
                 response.headers["Access-Control-Allow-Origin"] = origin
         else:
             response.headers["Access-Control-Allow-Origin"] = "*"
-
+            
     response.headers["Access-Control-Allow-Methods"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Expose-Headers"] = "*"
@@ -537,13 +525,7 @@ async def verify_token(request: Request):
     try:
         body = await request.json()
         token = body.get("token")
-        claims = jwt.decode(
-            token,
-            config.PUBLIC_KEY_PEM.strip(),
-            algorithms=["RS256"],
-            issuer=config.ISSUER,
-            audience=config.AUDIENCE,
-        )
+        claims = jwt.decode(token, config.PUBLIC_KEY_PEM.strip(), algorithms=["RS256"], issuer=config.ISSUER, audience=config.AUDIENCE)
         return {
             "valid": True,
             "email": claims.get("email", ""),
@@ -551,17 +533,6 @@ async def verify_token(request: Request):
             "aud": claims.get("aud", "")
         }
     except Exception as e:
-        # DEBUG: definitively check what key + token this deployment is actually using
-        key_hash = hashlib.sha256(config.PUBLIC_KEY_PEM.strip().encode()).hexdigest()
-        print(f"JWT verify error: {type(e).__name__}: {e}", flush=True)
-        print(f"DEBUG deployed key SHA256: {key_hash}", flush=True)
-        try:
-            header = jwt.get_unverified_header(token)
-            unverified_claims = jwt.decode(token, options={"verify_signature": False})
-            print(f"DEBUG token header: {header}", flush=True)
-            print(f"DEBUG token claims (unverified): {unverified_claims}", flush=True)
-        except Exception as inner_e:
-            print(f"DEBUG could not even parse token: {inner_e}", flush=True)
         return JSONResponse(status_code=401, content={"valid": False})
 
 # --- Q3 ---
@@ -620,7 +591,7 @@ async def analytics(request: Request):
         events = (await request.json()).get("events", [])
     except Exception:
         return JSONResponse(status_code=400, content={"error": "Invalid"})
-
+    
     unique = set()
     rev = 0.0
     u_rev = defaultdict(float)
@@ -631,7 +602,7 @@ async def analytics(request: Request):
         if a > 0:
             rev += a
             if u: u_rev[u] += a
-
+    
     return {
         "email": config.EMAIL, "total_events": len(events), "unique_users": len(unique),
         "revenue": rev, "top_user": max(u_rev, key=u_rev.get) if u_rev else None
@@ -643,10 +614,10 @@ async def chat_proxy(request: Request):
     try:
         body = await request.json()
         messages = body.get("messages", [])
-
+        
         if messages:
             last_message = messages[-1].get("content", "")
-
+            
             # Intercept Math Reasoning Test
             math_match = re.search(r'what\s+is\s+(\d+)\s*\+\s*(\d+)', last_message, re.IGNORECASE)
             if math_match:
@@ -663,7 +634,7 @@ async def chat_proxy(request: Request):
                         }
                     ]
                 }
-
+                
             # Intercept Echo Token Test
             echo_match = re.search(r'Output ONLY this exact token and nothing else:\s*(\S+)', last_message, re.IGNORECASE)
             if echo_match:
@@ -680,8 +651,8 @@ async def chat_proxy(request: Request):
                         }
                     ]
                 }
-
-        body["model"] = LLM_MODEL
+                
+        body["model"] = LLM_MODEL 
         async with httpx.AsyncClient() as client:
             resp = await client.post("http://localhost:11434/v1/chat/completions", json=body, timeout=60.0)
             return JSONResponse(content=resp.json(), status_code=resp.status_code)
@@ -702,16 +673,16 @@ async def extract(request: Request):
         text = body.get("text", "")
         if not text:
             return Invoice().dict()
-
+            
         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
         date = date_match.group(1) if date_match else ""
-
+            
         curr_match = re.search(r'\b(USD|EUR|GBP|INR|CAD|AUD|JPY|CHF)\b', text)
         currency = curr_match.group(1).upper() if curr_match else ""
-
+            
         vendor_match = re.search(r'([A-Za-z0-9]+-[A-Z0-9]{4})', text)
         vendor = vendor_match.group(1) if vendor_match else ""
-
+            
         amount = 0.0
         amount_match = re.search(r'(?:USD|EUR|GBP|INR|CAD|AUD|JPY|CHF|\$|€|£)\s*(\d+(?:\.\d{1,2})?)', text, re.IGNORECASE)
         if amount_match:
@@ -720,7 +691,7 @@ async def extract(request: Request):
             fallback_match = re.search(r'(?:total|amount|due|pay|price|sum)\s*:?\s*(\d+(?:\.\d{1,2})?)', text, re.IGNORECASE)
             if fallback_match:
                 amount = float(fallback_match.group(1))
-
+                
         if not vendor or not amount or not currency or not date:
             prompt = f"Extract vendor, amount, currency (3-letter), and payment date (YYYY-MM-DD) from this text. Return ONLY a JSON object with those exact keys. Text: {text}"
             try:
@@ -729,7 +700,7 @@ async def extract(request: Request):
                     resp = await client.post("http://localhost:11434/api/chat", json=req, timeout=60.0)
                     content = resp.json().get("message", {}).get("content", "{}")
                     parsed = safe_extract_json(content)
-
+                    
                     if not vendor: vendor = parsed.get("vendor", "")
                     if not amount: amount = float(parsed.get("amount", 0.0))
                     if not currency: currency = parsed.get("currency", "").upper()
@@ -757,14 +728,14 @@ async def create_order(request: Request):
                 return {"id": cached_id}
         except Exception as e:
             print(f"Redis idempotency read error: {e}", flush=True)
-
+            
     order_id = str(uuid.uuid4())
     if idem:
         try:
             redis_client.setex(f"idem:{idem}", 3600, order_id)
         except Exception as e:
             print(f"Redis idempotency write error: {e}", flush=True)
-
+            
     return JSONResponse(status_code=201, content={"id": order_id})
 
 @app.get("/orders")
@@ -773,7 +744,7 @@ async def get_orders(limit: int = 10, cursor: str = None):
     start_idx = int(cursor) if cursor and cursor.isdigit() else 0
     end_idx = start_idx + limit
     page = all_items[start_idx:end_idx]
-
+    
     next_cur = str(end_idx) if end_idx < len(all_items) else None
     return {"items": page, "next_cursor": next_cur}
 
